@@ -59,8 +59,9 @@ NetworkInitialization::NetworkInitialization(QObject *parent)
 void NetworkInitialization::updateLanguage(const QString &locale)
 {
     qWarning(DSM) << "update local language" << locale;
-    installLanguage(locale);
-    m_initialized = true;
+    if (installLanguage(locale)) {
+        m_initialized = true;
+    }
     updateConnectionLanguage();
 }
 
@@ -332,11 +333,11 @@ bool NetworkInitialization::installUserTranslator(const QString &json)
         //do nothing
     } else if (error.error == QJsonParseError::NoError && doc.isObject()) {
         int uid = doc.object().value("Uid").toInt();
-        QVariant localeVariant = accountInterface(QString("/com/deepin/daemon/Accounts/User%1").arg(uid), "Locale");
+        QVariant localeVariant = accountInterface(QString("%1/User%2").arg(DAEMONACCOUNTPATH).arg(uid), "Locale");
         locale = localeVariant.toString().split(".").first();
     } else if (m_accountServiceRegister) {
         // 如果是非法的json，就直接从Accounts服务中获取
-        QVariant userListVariant = accountInterface("/com/deepin/daemon/Accounts", "UserList", false);
+        QVariant userListVariant = accountInterface(DAEMONACCOUNTPATH, "UserList", false);
         const QStringList userList = userListVariant.toStringList();
         qCDebug(DSM) << "found users" << userList;
         if (userList.isEmpty())
@@ -357,13 +358,15 @@ bool NetworkInitialization::installUserTranslator(const QString &json)
 
     if (localTmp != locale) {
         localTmp = locale;
-        installLanguage(locale);
+        if (!installLanguage(locale)) {
+            return false;
+        }
     }
 
     return true;
 }
 
-void NetworkInitialization::installLanguage(const QString &locale)
+bool NetworkInitialization::installLanguage(const QString &locale)
 {
     static QTranslator translator;
     QCoreApplication::removeTranslator(&translator);
@@ -371,7 +374,9 @@ void NetworkInitialization::installLanguage(const QString &locale)
     if (translator.load(qmFile)) {
         QCoreApplication::installTranslator(&translator);
         qCDebug(DSM) << "install translation file" << qmFile;
+        return true;
     }
+    return false;
 }
 
 static QString getLocaleValue(const QString &filePath, const QStringList &keys, const QString &splitKey = "=", const QString &keywords = QString())
@@ -406,8 +411,7 @@ bool NetworkInitialization::installSystemTranslator()
         locale = getLocaleValue("/etc/deepin-installer/deepin-installer.conf", { "DI_LOCALE", "LIVE_LOCALES" }, "=", "LOCALE");
     if (!locale.isEmpty()) {
         qCInfo(DSM) << "Install system language:" << locale;
-        installLanguage(locale);
-        return true;
+        return installLanguage(locale);
     }
     return false;
 }
@@ -469,8 +473,9 @@ void NetworkInitialization::updateConnectionLanguage(const QString &accountPath)
 {
     QVariant localeVariant = accountInterface(accountPath, "Locale");
     QString locale = localeVariant.toString().split(".").first();
-    installLanguage(locale);
-    m_initialized = true;
+    if (installLanguage(locale)) {
+        m_initialized = true;
+    }
 
     if (m_untranslactionConnections.isEmpty()) {
         qDebug() << "can't found untranslation connections";
